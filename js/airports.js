@@ -1,0 +1,60 @@
+/** ICAO airport code → IATA + place name (common departures over Sydney). */
+export const AIRPORTS = {
+  YSSY: { iata: "SYD", name: "Sydney" },
+  YSBK: { iata: "BWU", name: "Sydney Bankstown" },
+  YSCB: { iata: "CBR", name: "Canberra" },
+  YMML: { iata: "MEL", name: "Melbourne" },
+  YBBN: { iata: "BNE", name: "Brisbane" },
+  YBCS: { iata: "CNS", name: "Cairns" },
+  YPAD: { iata: "ADL", name: "Adelaide" },
+  YPPH: { iata: "PER", name: "Perth" },
+  YPDN: { iata: "DRW", name: "Darwin" },
+  YBHM: { iata: "HTI", name: "Hamilton Island" },
+  YBCG: { iata: "OOL", name: "Gold Coast" },
+  NZAA: { iata: "AKL", name: "Auckland" },
+  NZWN: { iata: "WLG", name: "Wellington" },
+  NZCH: { iata: "CHC", name: "Christchurch" },
+  WSSS: { iata: "SIN", name: "Singapore" },
+  WMKK: { iata: "KUL", name: "Kuala Lumpur" },
+  VTBS: { iata: "BKK", name: "Bangkok" },
+  VHHH: { iata: "HKG", name: "Hong Kong" },
+  RPLL: { iata: "MNL", name: "Manila" },
+  RPVM: { iata: "CEB", name: "Cebu" },
+  ZGGG: { iata: "CAN", name: "Guangzhou" },
+  ZGSZ: { iata: "SZX", name: "Shenzhen" },
+  ZSPD: { iata: "PVG", name: "Shanghai Pudong" },
+  ZBAA: { iata: "PEK", name: "Beijing" },
+  RJAA: { iata: "NRT", name: "Tokyo Narita" },
+  RJBB: { iata: "KIX", name: "Osaka" },
+  RKSI: { iata: "ICN", name: "Seoul Incheon" },
+  VABB: { iata: "BOM", name: "Mumbai" },
+  VIDP: { iata: "DEL", name: "Delhi" },
+  OMDB: { iata: "DXB", name: "Dubai" },
+  OMAA: { iata: "AUH", name: "Abu Dhabi" },
+  OERK: { iata: "RUH", name: "Riyadh" },
+  OTHH: { iata: "DOH", name: "Doha" },
+  EGLL: { iata: "LHR", name: "London Heathrow" },
+  LFPG: { iata: "CDG", name: "Paris Charles de Gaulle" },
+  EDDF: { iata: "FRA", name: "Frankfurt" },
+  LEMD: { iata: "MAD", name: "Madrid" },
+  LIRF: { iata: "FCO", name: "Rome" },
+  EHAM: { iata: "AMS", name: "Amsterdam" },
+  KJFK: { iata: "JFK", name: "New York JFK" },
+  KLAX: { iata: "LAX", name: "Los Angeles" },
+  KSFO: { iata: "SFO", name: "San Francisco" },
+  PHNL: { iata: "HNL", name: "Honolulu" },
+  NFFN: { iata: "NAN", name: "Nadi" },
+  NFNA: { iata: "SUV", name: "Suva" },
+  YBTL: { iata: "TSV", name: "Townsville" },
+  YBRK: { iata: "ROK", name: "Rockhampton" },
+  YMAV: { iata: "AVV", name: "Melbourne Avalon" },
+  YMHB: { iata: "HBA", name: "Hobart" },
+};
+
+export function formatAirport(icao) {
+  if (!icao) return "---";
+  const code = icao.trim().toUpperCase();
+  const info = AIRPORTS[code];
+  if (info) return `${info.iata}, ${info.name}`;
+  return code;
+}

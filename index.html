@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#000000" />
+    <title>Nathan St · HUD</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="hud-viewport">
+      <div class="hud-fx scanlines" aria-hidden="true"></div>
+      <div class="hud-fx vignette" aria-hidden="true"></div>
+      <div class="hud-fx grid" aria-hidden="true"></div>
+      <div class="hud-horizon" aria-hidden="true"></div>
+
+      <div class="hud-shell">
+        <header class="hud-top">
+          <div class="hud-brand">
+            <span class="hud-kicker">AIRSPACE HUD</span>
+            <h1 class="hud-title" id="hud-location">NATHAN ST · COOGEE</h1>
+            <span class="hud-sub" id="hud-range">SECTOR 2W · 8E · 4N/S KM · AIRBORNE ONLY</span>
+          </div>
+          <div class="hud-status">
+            <div class="hud-readout">
+              <span class="readout-label">scan</span>
+              <span class="readout-value" id="hud-scan">INIT</span>
+            </div>
+            <div class="hud-readout">
+              <span class="readout-label">trgt</span>
+              <span class="readout-value" id="hud-count">00</span>
+            </div>
+            <div class="hud-readout">
+              <span class="readout-label">link</span>
+              <span class="readout-value" id="hud-link">---</span>
+            </div>
+          </div>
+        </header>
+
+        <p class="hud-alert hidden" id="error-banner" role="alert"></p>
+
+        <main class="hud-main hud-split">
+          <section class="hud-panel" id="panel-radar">
+            <div class="hud-frame">
+              <span class="frame-tag">TAC · PPI</span>
+              <canvas id="radar" width="400" height="400" aria-label="Tactical radar"></canvas>
+              <span class="frame-range">2W · 8E</span>
+            </div>
+          </section>
+          <section class="hud-panel" id="panel-map">
+            <div class="hud-frame map-frame">
+              <span class="frame-tag">NAV · CHART</span>
+              <div id="map"></div>
+            </div>
+          </section>
+        </main>
+
+        <section class="hud-contacts-section">
+          <div class="hud-frame contacts-frame">
+            <span class="frame-tag">CONTACTS</span>
+            <div class="hud-contacts" id="aircraft-list">
+              <p class="hud-empty" id="empty-msg">STANDBY — AWAITING SCAN</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="js/app.js" type="module"></script>
+  </body>
+</html>

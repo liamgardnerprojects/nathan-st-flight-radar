@@ -1,0 +1,15 @@
+# Deploy: connect this repo at https://dashboard.render.com → New → Blueprint
+# Set OPENSKY_CLIENT_ID and OPENSKY_CLIENT_SECRET in the Render dashboard (never commit them).
+services:
+  - type: web
+    name: nathan-st-flight-radar
+    runtime: python
+    plan: free
+    buildCommand: echo "stdlib only — no install step"
+    startCommand: python3 server.py
+    healthCheckPath: /api/status
+    envVars:
+      - key: OPENSKY_CLIENT_ID
+        sync: false
+      - key: OPENSKY_CLIENT_SECRET
+        sync: false
