@@ -254,8 +254,7 @@ async function fetchStates() {
     throw new Error(`OPENSKY ${res.status}: ${detail}`);
   }
   const data = await res.json();
-  if (!data?.states) throw new Error("OPENSKY: NO STATE DATA");
-  return data.states;
+  return data?.states ?? [];
 }
 
 async function fetchMetadata(icao24) {
@@ -410,7 +409,17 @@ async function scan() {
   setLinkState("busy");
   setReadout(els.hudScan, "SCAN");
   try {
-    const states = await fetchStates();
+    let states;
+    try {
+      states = await fetchStates();
+    } catch (firstErr) {
+      if (/timed out|502|503|504|fetch/i.test(firstErr.message)) {
+        await new Promise((r) => setTimeout(r, 2000));
+        states = await fetchStates();
+      } else {
+        throw firstErr;
+      }
+    }
     const parsed = states.map(parseState).filter(Boolean);
     parsed.sort((a, b) => a.distanceM - b.distanceM);
     await enrichAircraft(parsed);

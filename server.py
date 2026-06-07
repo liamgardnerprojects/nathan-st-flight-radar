@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +25,8 @@ CREDITS_REGISTERED = 4_000
 # Active 07:00–22:59; standby 23:00–06:59 (8 h)
 ACTIVE_MINUTES_PER_DAY = 16 * 60
 PREFERRED_REFRESH_AUTHENTICATED = 15  # seconds
+FETCH_TIMEOUT = 20  # seconds per attempt
+FETCH_RETRIES = 3
 
 
 def recommended_refresh_sec(*, authenticated: bool) -> int:
@@ -168,12 +171,21 @@ class Handler(SimpleHTTPRequestHandler):
         return headers
 
     def _fetch(self, upstream: str) -> tuple[int, bytes]:
-        req = urllib.request.Request(upstream, headers=self._auth_headers())
-        try:
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                return resp.status, resp.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read()
+        last_exc: Exception | None = None
+        for attempt in range(FETCH_RETRIES):
+            req = urllib.request.Request(upstream, headers=self._auth_headers())
+            try:
+                with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+                    return resp.status, resp.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, exc.read()
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last_exc = exc
+                if attempt + 1 < FETCH_RETRIES:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise last_exc from exc
+        raise RuntimeError("unreachable")  # pragma: no cover
 
     def _send_raw(self, code: int, body: bytes, content_type: str):
         self.send_response(code)
@@ -206,7 +218,18 @@ class Handler(SimpleHTTPRequestHandler):
         super().log_message(fmt, *args)
 
 
+def _warm_opensky() -> None:
+    if not TOKENS:
+        return
+    try:
+        TOKENS.get_token()
+        print("OpenSky token ready.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"OpenSky token warm-up failed: {exc}")
+
+
 def main():
+    _warm_opensky()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"Nathan St Flight Radar — http://0.0.0.0:{PORT}")
     print("On iPad (same Wi‑Fi): http://<this-mac-ip>:{PORT}")
