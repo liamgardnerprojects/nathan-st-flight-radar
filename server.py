@@ -127,7 +127,10 @@ def fetch_states_body(query: str) -> bytes | None:
         if use_auth and not TOKENS:
             continue
         try:
-            code, body = fetch_upstream(url, use_auth=use_auth)
+            # Background poller can wait longer than web requests.
+            code, body = fetch_upstream(
+                url, use_auth=use_auth, timeout=25, retries=3
+            )
             if code == 200 and body:
                 return body
             print(f"OpenSky states HTTP {code} (auth={use_auth})")
@@ -200,14 +203,9 @@ class Handler(SimpleHTTPRequestHandler):
         if cached:
             self._send_raw(200, cached, "application/json")
             return
-        body = fetch_states_body(key)
-        if body:
-            STATES_CACHE.set(key, body)
-            self._send_raw(200, body, "application/json")
-            return
         self._json_response(
             503,
-            {"error": "opensky unavailable — background poll will retry"},
+            {"error": "opensky warming up — retry in a few seconds"},
         )
 
     def _proxy_metadata(self, icao: str):
@@ -325,13 +323,7 @@ def _warm_opensky() -> None:
             print("OpenSky token ready.")
         except Exception as exc:  # noqa: BLE001
             print(f"OpenSky token warm-up failed (will try anonymous): {exc}")
-    query = default_states_query()
-    body = fetch_states_body(query)
-    if body:
-        STATES_CACHE.set(query, body)
-        print("OpenSky states cache primed.")
-    else:
-        print("OpenSky states warm-up failed — poller will retry.")
+    print("States poller will fill cache in background.")
 
 
 def main():

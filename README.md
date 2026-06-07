@@ -82,7 +82,20 @@ Open that URL on your Mac or iPad (any network). The HUD **LINK** readout should
 
 - Free Render apps **sleep after ~15 minutes idle**; the first load after sleep can take 30–60 seconds.
 - A public URL exposes your OpenSky proxy — anyone with the link could use your daily API credits. Use a private/obscure URL or upgrade to a paid plan with access control if that matters.
-- Local-only alternative: keep `python3 server.py` on your Mac and use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) for HTTPS without hosting on Render.
+- **Render + OpenSky:** OpenSky often times out from Render’s cloud servers. The app polls OpenSky in the background and serves cached data, but if scans stay on **link FAULT**, use the **Cloudflare Tunnel** option below instead — it exposes your Mac (where OpenSky works reliably).
+
+### Alternative: Cloudflare Tunnel (recommended if Render faults)
+
+Run the server on your Mac, then share it on HTTPS without Render:
+
+```bash
+brew install cloudflared   # one-time
+cd "/Users/liamgardner/Documents/Nathan St Flight Radar"
+python3 server.py          # terminal 1
+cloudflared tunnel --url http://127.0.0.1:8765   # terminal 2
+```
+
+Cloudflare prints a `https://….trycloudflare.com` URL — use that on iPad/phone from anywhere. Your Mac must stay on and running both commands.
 
 ## Privacy
 
