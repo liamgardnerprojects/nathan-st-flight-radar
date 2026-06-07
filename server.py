@@ -121,15 +121,19 @@ def fetch_upstream(
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
-def fetch_states_body(query: str) -> bytes | None:
+def fetch_states_body(
+    query: str,
+    *,
+    timeout: int = 25,
+    retries: int = 3,
+) -> bytes | None:
     url = f"{OPENSKY}/states/all?{query}"
     for use_auth in (True, False):
         if use_auth and not TOKENS:
             continue
         try:
-            # Background poller can wait longer than web requests.
             code, body = fetch_upstream(
-                url, use_auth=use_auth, timeout=25, retries=3
+                url, use_auth=use_auth, timeout=timeout, retries=retries
             )
             if code == 200 and body:
                 return body
@@ -144,7 +148,7 @@ def _poll_states_loop() -> None:
         with POLL_QUERIES_LOCK:
             queries = set(POLL_QUERIES) or {default_states_query()}
         for query in queries:
-            body = fetch_states_body(query)
+            body = fetch_states_body(query, timeout=25, retries=3)
             if body:
                 STATES_CACHE.set(query, body)
         time.sleep(REFRESH_SEC)
@@ -199,14 +203,20 @@ class Handler(SimpleHTTPRequestHandler):
         key = query or default_states_query()
         with POLL_QUERIES_LOCK:
             POLL_QUERIES.add(key)
-        cached = STATES_CACHE.get(key, max_age=REFRESH_SEC * 6)
-        if cached:
-            self._send_raw(200, cached, "application/json")
+        fresh = STATES_CACHE.get(key, max_age=REFRESH_SEC * 2)
+        if fresh:
+            self._send_raw(200, fresh, "application/json")
             return
-        self._json_response(
-            503,
-            {"error": "opensky warming up — retry in a few seconds"},
-        )
+        body = fetch_states_body(key, timeout=10, retries=2)
+        if body:
+            STATES_CACHE.set(key, body)
+            self._send_raw(200, body, "application/json")
+            return
+        stale = STATES_CACHE.get(key, max_age=REFRESH_SEC * 30)
+        if stale:
+            self._send_raw(200, stale, "application/json")
+            return
+        self._json_response(502, {"error": "opensky timed out — try again shortly"})
 
     def _proxy_metadata(self, icao: str):
         opensky_url = f"{OPENSKY}/metadata/aircraft/icao24/{icao}"
