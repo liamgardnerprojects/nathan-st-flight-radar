@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -25,8 +27,10 @@ CREDITS_REGISTERED = 4_000
 # Active 07:00–22:59; standby 23:00–06:59 (8 h)
 ACTIVE_MINUTES_PER_DAY = 16 * 60
 PREFERRED_REFRESH_AUTHENTICATED = 15  # seconds
-FETCH_TIMEOUT = 20  # seconds per attempt
-FETCH_RETRIES = 3
+FETCH_TIMEOUT = 12  # seconds per attempt (keep under Render's ~30s request limit)
+FETCH_RETRIES = 2
+M_PER_DEG_LAT = 111_320
+USER_AGENT = "NathanStFlightRadar/1.0 (home use)"
 
 
 def recommended_refresh_sec(*, authenticated: bool) -> int:
@@ -40,6 +44,107 @@ def recommended_refresh_sec(*, authenticated: bool) -> int:
 
 TOKENS = create_token_manager()
 REFRESH_SEC = recommended_refresh_sec(authenticated=TOKENS is not None)
+
+
+def default_states_query() -> str:
+    """Match js/app.js bboxForSector(1.15)."""
+    lat, lon = -33.9189055, 151.2489740
+    west_m, east_m, cross_m = 2000, 8000, 4000
+    pad = 1.15
+    cos_lat = math.cos(math.radians(lat))
+    d_lon_w = (west_m * pad) / (M_PER_DEG_LAT * cos_lat)
+    d_lon_e = (east_m * pad) / (M_PER_DEG_LAT * cos_lat)
+    d_lat = (cross_m * pad) / M_PER_DEG_LAT
+    params = {
+        "lamin": f"{lat - d_lat:.5f}",
+        "lamax": f"{lat + d_lat:.5f}",
+        "lomin": f"{lon - d_lon_w:.5f}",
+        "lomax": f"{lon + d_lon_e:.5f}",
+        "extended": "1",
+    }
+    return urllib.parse.urlencode(params)
+
+
+class StatesCache:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[float, bytes]] = {}
+
+    def get(self, query: str, *, max_age: float) -> bytes | None:
+        with self._lock:
+            entry = self._entries.get(query)
+            if not entry:
+                return None
+            ts, body = entry
+            if time.time() - ts > max_age:
+                return None
+            return body
+
+    def set(self, query: str, body: bytes) -> None:
+        with self._lock:
+            self._entries[query] = (time.time(), body)
+
+
+STATES_CACHE = StatesCache()
+POLL_QUERIES: set[str] = set()
+POLL_QUERIES_LOCK = threading.Lock()
+
+
+def _request_headers(*, use_auth: bool) -> dict[str, str]:
+    headers = {"User-Agent": USER_AGENT}
+    if use_auth and TOKENS:
+        headers.update(TOKENS.headers())
+    return headers
+
+
+def fetch_upstream(
+    upstream: str,
+    *,
+    use_auth: bool = True,
+    timeout: int = FETCH_TIMEOUT,
+    retries: int = FETCH_RETRIES,
+) -> tuple[int, bytes]:
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        req = urllib.request.Request(upstream, headers=_request_headers(use_auth=use_auth))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt + 1 < retries:
+                time.sleep(1.0 * (attempt + 1))
+                continue
+            raise last_exc from exc
+    raise RuntimeError("unreachable")  # pragma: no cover
+
+
+def fetch_states_body(query: str) -> bytes | None:
+    url = f"{OPENSKY}/states/all?{query}"
+    for use_auth in (True, False):
+        if use_auth and not TOKENS:
+            continue
+        try:
+            code, body = fetch_upstream(url, use_auth=use_auth)
+            if code == 200 and body:
+                return body
+            print(f"OpenSky states HTTP {code} (auth={use_auth})")
+        except Exception as exc:  # noqa: BLE001
+            print(f"OpenSky states failed (auth={use_auth}): {exc}")
+    return None
+
+
+def _poll_states_loop() -> None:
+    while True:
+        with POLL_QUERIES_LOCK:
+            queries = set(POLL_QUERIES) or {default_states_query()}
+        for query in queries:
+            body = fetch_states_body(query)
+            if body:
+                STATES_CACHE.set(query, body)
+        time.sleep(REFRESH_SEC)
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -88,10 +193,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _proxy_states(self, query: str):
-        upstream = f"{OPENSKY}/states/all"
-        if query:
-            upstream += "?" + query
-        self._proxy_json(upstream)
+        key = query or default_states_query()
+        with POLL_QUERIES_LOCK:
+            POLL_QUERIES.add(key)
+        cached = STATES_CACHE.get(key, max_age=REFRESH_SEC * 6)
+        if cached:
+            self._send_raw(200, cached, "application/json")
+            return
+        body = fetch_states_body(key)
+        if body:
+            STATES_CACHE.set(key, body)
+            self._send_raw(200, body, "application/json")
+            return
+        self._json_response(
+            503,
+            {"error": "opensky unavailable — background poll will retry"},
+        )
 
     def _proxy_metadata(self, icao: str):
         opensky_url = f"{OPENSKY}/metadata/aircraft/icao24/{icao}"
@@ -165,27 +282,10 @@ class Handler(SimpleHTTPRequestHandler):
         self._proxy_json(upstream)
 
     def _auth_headers(self) -> dict[str, str]:
-        headers = {"User-Agent": "NathanStFlightRadar/1.0 (home use)"}
-        if TOKENS:
-            headers.update(TOKENS.headers())
-        return headers
+        return _request_headers(use_auth=True)
 
     def _fetch(self, upstream: str) -> tuple[int, bytes]:
-        last_exc: Exception | None = None
-        for attempt in range(FETCH_RETRIES):
-            req = urllib.request.Request(upstream, headers=self._auth_headers())
-            try:
-                with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-                    return resp.status, resp.read()
-            except urllib.error.HTTPError as exc:
-                return exc.code, exc.read()
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                last_exc = exc
-                if attempt + 1 < FETCH_RETRIES:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                raise last_exc from exc
-        raise RuntimeError("unreachable")  # pragma: no cover
+        return fetch_upstream(upstream, use_auth=True)
 
     def _send_raw(self, code: int, body: bytes, content_type: str):
         self.send_response(code)
@@ -219,17 +319,25 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def _warm_opensky() -> None:
-    if not TOKENS:
-        return
-    try:
-        TOKENS.get_token()
-        print("OpenSky token ready.")
-    except Exception as exc:  # noqa: BLE001
-        print(f"OpenSky token warm-up failed: {exc}")
+    if TOKENS:
+        try:
+            TOKENS.get_token()
+            print("OpenSky token ready.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"OpenSky token warm-up failed (will try anonymous): {exc}")
+    query = default_states_query()
+    body = fetch_states_body(query)
+    if body:
+        STATES_CACHE.set(query, body)
+        print("OpenSky states cache primed.")
+    else:
+        print("OpenSky states warm-up failed — poller will retry.")
 
 
 def main():
     _warm_opensky()
+    poller = threading.Thread(target=_poll_states_loop, daemon=True, name="states-poller")
+    poller.start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"Nathan St Flight Radar — http://0.0.0.0:{PORT}")
     print("On iPad (same Wi‑Fi): http://<this-mac-ip>:{PORT}")

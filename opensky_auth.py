@@ -16,6 +16,7 @@ TOKEN_URL = (
     "protocol/openid-connect/token"
 )
 TOKEN_REFRESH_MARGIN = 30
+TOKEN_TIMEOUT = 10
 ROOT = Path(__file__).resolve().parent
 
 
@@ -57,7 +58,10 @@ class TokenManager:
         self._lock = threading.Lock()
 
     def headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.get_token()}"}
+        try:
+            return {"Authorization": f"Bearer {self.get_token()}"}
+        except Exception:  # noqa: BLE001
+            return {}
 
     def get_token(self) -> str:
         with self._lock:
@@ -79,7 +83,7 @@ class TokenManager:
         ).encode()
         req = urllib.request.Request(TOKEN_URL, data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with urllib.request.urlopen(req, timeout=25) as resp:
+        with urllib.request.urlopen(req, timeout=TOKEN_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
         self.token = data["access_token"]
         expires_in = int(data.get("expires_in", 1800))

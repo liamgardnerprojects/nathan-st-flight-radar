@@ -413,7 +413,7 @@ async function scan() {
     try {
       states = await fetchStates();
     } catch (firstErr) {
-      if (/timed out|502|503|504|fetch/i.test(firstErr.message)) {
+      if (/timed out|502|503|504|503|unavailable|fetch/i.test(firstErr.message)) {
         await new Promise((r) => setTimeout(r, 2000));
         states = await fetchStates();
       } else {
